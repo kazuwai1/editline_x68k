@@ -1,0 +1,47 @@
+◎コントロールキー(Ctrl+文字)
+^A	beg_line	行頭へ
+^B	bk_char		一文字後退
+^D	del_char	一文字削除
+^E	end_line	行末へ
+^F	fd_char		一文字前進
+^G	el_ring_bell	ベルを鳴らす
+^H	bk_del_char	後退削除
+^I	c_complete	ファイル名補完
+^J	accept_line	改行
+^K	kill_line	一行削除
+^L	refresh		再描画
+^M	accept_line	改行
+^N	h_next		ヒストリー次候補
+^O	el_ring_bell	ベルを鳴らす
+^P	h_prev		ヒストリー前候補
+^Q	el_ring_bell	ベルを鳴らす
+^R	h_search	ヒストリー検索
+^S	el_ring_bell	ベルを鳴らす
+^T	transpose	文字入れ替え（カーソルの前後を入れ替えて、カーソル位置は一つ行末方向へ)
+^U	el_ring_bell	ベルを鳴らす
+^V	quote		クォーティング(次の1文字がコントロールキャラクタだった場合でも入力行へ反映する)
+^W	bk_kill_word	一語削除(カーソルの左側の語を削除する)
+^X	exchange	交換(マーク位置と現在のカーソル位置を交換)
+^Y	yank		ペースト
+^Z	el_ring_bell	ベルを鳴らす
+^[	meta		メタキャラクタ
+^]	move_to_char	キャラへ移動(行末方向の該当キャラへの移動)
+^^	el_ring_bell	ベルを鳴らす
+^_	el_ring_bell	ベルを鳴らす
+
+◎エスケープキー（ESC＋文字)
+ESC+^H	bk_kill_word	一語削除
+ESC+DEL	bk_kill_word	一語削除
+ESC+' '	mk_set		マーク
+ESC+<	h_first		ヒストリの先頭へ
+ESC+>	h_last		ヒストリの最後へ
+ESC+?	c_possible	補完可能な候補を表示
+ESC+b	bk_word		一語戻り
+ESC+c	case_cap_word	カーソル位置の文字を大文字にして一語進
+ESC+d	fw_kill_word	行末方へ一語削除
+ESC+f	fd_word		行末方向へ一語移動
+ESC+l	case_down_word	カーソル位置の単語を小文字化して一語進む
+ESC+m	toggle_meta_mode	メタ押下状態のトグル
+ESC+u	case_up_word	カーソル位置の単語を大文字化して一語進む
+ESC+y	yank		ペースト
+ESC+w	copy_region	領域コピー
