@@ -147,7 +147,7 @@ static const char *old_prompt = NULL;
 static rl_vcpfunc_t *line_handler = NULL;
 static char       *line_up = "\x1b[A";
 static char       *line_down = "\x1b[B";
-int prompt_len = 0;
+static int        prompt_len = 0;
 
 int               el_no_echo = 0; /* e.g., under Emacs */
 int               el_no_hist = 0;
@@ -157,6 +157,7 @@ int               rl_end;
 int               rl_meta_chars = 0; /* Display 8-bit chars as the actual char(0) or as `M-x'(1)? */
 int               rl_inhibit_complete = 0;
 char             *rl_line_buffer = NULL;
+static const char *rl_saved_prompt = NULL;
 const char       *rl_prompt = NULL;
 const char       *rl_readline_name = NULL; /* Set by calling program, for conditional parsing of ~/.inputrc - Not supported yet! */
 FILE             *rl_instream = NULL;  /* The stdio stream from which input is read. Defaults to stdin if NULL */
@@ -242,7 +243,7 @@ static void tty_show(unsigned char c)
     }
 }
 
-static void tty_string(char *p)
+static void tty_string(const char *p)
 {
     int i = rl_point + prompt_len + 1;
 
@@ -529,12 +530,6 @@ static el_status_t do_forward(el_status_t move)
 
         /* Skip to end of word, if inside a word. */
         for (; rl_point < rl_end && is_alpha_num(p[0]); rl_point++, p++) {
-            if (move == CSmove)
-                right(CSstay);
-        }
-
-        /* Skip to next word, or skip leading white space if outside a word. */
-        for ( ; rl_point < rl_end && (p[0] == ' ' || !is_alpha_num(p[0])); rl_point++, p++) {
             if (move == CSmove)
                 right(CSstay);
         }
@@ -866,7 +861,7 @@ static const char *search_hist(const char *search, const char *(*move)(void))
 
 static el_status_t h_search_end(const char *p)
 {
-    rl_prompt = old_prompt;
+    rl_set_prompt(old_prompt);
     Searching = 0;
 
     if (el_intr_pending > 0) {
@@ -893,8 +888,8 @@ static el_status_t h_search(void)
 
     clear_line();
     old_prompt = rl_prompt;
-    rl_prompt = "Search: ";
-    tty_puts(rl_prompt);
+    rl_set_prompt("Search: ");
+    reposition(EOF);
 
     search_move = Repeat == NO_ARG ? el_prev_hist : el_next_hist;
     if (line_handler) {
@@ -1131,6 +1126,30 @@ static el_status_t meta(void)
         return CSeof;
 
 #ifdef CONFIG_ANSI_ARROWS
+    /* See: https://en.wikipedia.org/wiki/ANSI_escape_code */
+    /* Recognize ANSI escapes for `Meta+Left` and `Meta+Right`. */
+    if (c == '\e') {
+        switch (tty_get()) {
+        case '[':
+        {
+            switch (tty_get()) {
+            /* \e\e[C = Meta+Left */
+            case 'C': return fd_word();
+            /* \e\e[D = Meta+Right */
+            case 'D': return bk_word();
+            default:
+                break;
+            }
+
+            return el_ring_bell();
+        }
+        default:
+            break;
+        }
+
+        return el_ring_bell();
+    }
+
     /* Also include VT-100 arrows. */
     if (c == '[' || c == 'O') {
         switch (tty_get()) {
@@ -1140,16 +1159,19 @@ static el_status_t meta(void)
             char seq[4] = { 0 };
             seq[0] = tty_get();
 
+            /* \e[1~ */
             if (seq[0] == '~')
                 return beg_line(); /* Home */
 
             for (c = 1; c < 3; c++)
                 seq[c] = tty_get();
 
-            if (!strncmp(seq, ";5C", 3))
-                return fd_word(); /* Ctrl+Right */
-            if (!strncmp(seq, ";5D", 3))
-                return bk_word(); /* Ctrl+Left */
+            if (!strncmp(seq, ";5C", 3)
+                || !strncmp(seq, ";3C", 3))
+                return fd_word(); /* \e[1;5C = Ctrl+Right */
+            if (!strncmp(seq, ";5D", 3)
+                || !strncmp(seq, ";3D", 3))
+                return bk_word(); /* \e[1;5D = Ctrl+Left */
 
             break;
         }
@@ -1229,6 +1251,8 @@ static el_status_t emacs(int c)
 
 static el_status_t tty_special(int c)
 {
+    el_status_t rc;
+
 #ifdef CONFIG_SIGINT
     if (c == rl_intr) {
         el_intr_pending = SIGINT;
@@ -1255,14 +1279,10 @@ static el_status_t tty_special(int c)
         return bk_del_char();
 
     if (c == rl_kill) {
-        if (rl_point != 0) {
-            old_point = rl_point;
-            rl_point = 0;
-            reposition(c);
-        }
-        Repeat = NO_ARG;
-
-        return kill_line();
+	Repeat = rl_point;
+	rc = bk_del_char();
+	Repeat = NO_ARG;
+	return rc;
     }
 
 #ifdef CONFIG_EOF
@@ -1328,7 +1348,7 @@ static char *editinput(int complete)
 static void hist_alloc(void)
 {
     if (!H.Lines)
-        H.Lines = calloc(el_hist_size, sizeof(char *));
+        H.Lines = calloc(1 + el_hist_size, sizeof(char *));
 }
 
 static void hist_add(const char *p)
@@ -1345,11 +1365,11 @@ static void hist_add(const char *p)
     if (s == NULL)
         return;
 
-    if (H.Size < el_hist_size) {
+    if (H.Size <= el_hist_size) {
         H.Lines[H.Size++] = s;
     } else {
         free(H.Lines[0]);
-        for (i = 0; i < el_hist_size - 1; i++)
+        for (i = 0; i < el_hist_size; i++)
             H.Lines[i] = H.Lines[i + 1];
         H.Lines[i] = s;
     }
@@ -1361,7 +1381,7 @@ static char *read_redirected(void)
     int         size = MEM_INC;
     char        *p;
     char        *line;
-    char        *end;
+    const char  *end;
 
     p = line = malloc(sizeof(char) * size);
     if (!p)
@@ -1443,10 +1463,28 @@ void rl_reset_terminal(const char *terminal_name)
     }
 }
 
+void rl_set_prompt(const char *prompt)
+{
+    if (prompt)
+        rl_prompt = prompt;
+    prompt_len = strlen(rl_prompt);
+}
+
+void rl_save_prompt(void)
+{
+    rl_saved_prompt = rl_prompt;
+}
+
+void rl_restore_prompt(void)
+{
+    if (rl_saved_prompt)
+        rl_set_prompt(rl_saved_prompt);
+}
+
 void rl_initialize(void)
 {
     if (!rl_prompt)
-        rl_prompt = "? ";
+        rl_set_prompt("? ");
 
     hist_alloc();
 
@@ -1465,7 +1503,7 @@ void rl_uninitialize(void)
 
     /* Uninitialize the history */
     if (H.Lines) {
-        for (i = 0; i < el_hist_size; i++) {
+        for (i = 0; i <= el_hist_size; i++) {
             if (H.Lines[i])
                 free(H.Lines[i]);
             H.Lines[i] = NULL;
@@ -1485,23 +1523,6 @@ void rl_uninitialize(void)
         free(rl_line_buffer);
     rl_line_buffer = NULL;
     Length = 0;
-}
-
-static const char *rl_saved_prompt = NULL;
-void rl_save_prompt(void)
-{
-    rl_saved_prompt = rl_prompt;
-}
-
-void rl_restore_prompt(void)
-{
-    if (rl_saved_prompt)
-        rl_prompt = rl_saved_prompt;
-}
-
-void rl_set_prompt(const char *prompt)
-{
-    rl_prompt = prompt;
 }
 
 void rl_clear_message(void)
@@ -1534,9 +1555,7 @@ static int el_prep(const char *prompt)
     if (!Screen)
         return -1;
 
-    rl_prompt = prompt ? prompt : NILSTR;
-    prompt_len = strlen(rl_prompt);
-
+    rl_set_prompt(prompt);
     if (el_no_echo) {
         int old = el_no_echo;
 

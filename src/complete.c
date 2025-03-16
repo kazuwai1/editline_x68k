@@ -44,7 +44,7 @@ static int compare(const void *p1, const void *p2)
 
 /* Fill in *avp with an array of names that match file, up to its length.
  * Ignore . and .. . */
-static int FindMatches(char *dir, char *file, char ***avp)
+static int FindMatches(const char *dir, const char *file, char ***avp)
 {
 #if !defined(human68k) || defined(X68LIBC)
     char        **av;
@@ -231,7 +231,7 @@ static int FindMatches(char *dir, char *file, char ***avp)
 /* Split a pathname into allocated directory and trailing filename parts. */
 static int SplitPath(const char *path, char **dirpart, char **filepart)
 {
-    static char DOT[] = ".";
+    static const char DOT[] = ".";
     char        *dpart;
     char        *fpart;
 
@@ -356,9 +356,7 @@ char *el_filename_complete(char *pathname, int *match)
 
 char *rl_filename_completion_function(const char *text, int state)
 {
-    char        *dir;
-    char        *file;
-    static char   **av;
+    static char   **av, *dir, *file;
     static size_t i, ac;
 
     if (!state) {
@@ -366,20 +364,40 @@ char *rl_filename_completion_function(const char *text, int state)
             return NULL;
 
         ac = FindMatches(dir, file, &av);
-        free(dir);
-        free(file);
-        if (!ac)
-            return NULL;
+	if (!ac) {
+	    free(dir);
+	    free(file);
+	    return NULL;
+	}
 
         i = 0;
     }
 
-    if (i < ac)
-        return av[i++];
+    if (i < ac) {
+	size_t len = (dir ? strlen(dir) : 0) + strlen(av[i]) + 3;
+	char *ptr = malloc(len);
+
+	if (ptr) {
+
+#ifndef human68k
+	    snprintf(ptr, len, "%s%s", dir, av[i++]);
+#else /* for X68000 (C89) */
+	    sprintf(ptr, "%s%s", dir, av[i++]);
+#endif
+	    if (ac == 1)
+		rl_add_slash(ptr, ptr);
+
+	    return ptr;
+	}
+    }
 
     do {
         free(av[--i]);
     } while (i > 0);
+
+    free(av);
+    free(dir);
+    free(file);
 
     return NULL;
 }
@@ -387,7 +405,7 @@ char *rl_filename_completion_function(const char *text, int state)
 /* Similar to el_find_word(), but used by GNU Readline API */
 static char *rl_find_token(size_t *len)
 {
-    char *ptr;
+    const char *ptr;
     int pos;
 
     for (pos = rl_point; pos < rl_end; pos++) {
@@ -484,8 +502,12 @@ static char *complete(char *token, int *match)
 
         free(word);
         word = NULL;
-        if (words[0])
-            word = strdup(words[0] + len);
+
+        /* Exactly one match -- finish it off. */
+	if (words[0] && !words[1]) {
+	    *match = 1;
+	    word = strdup(words[0] + len);
+	}
 
         while (words[i])
             free(words[i++]);

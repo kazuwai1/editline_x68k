@@ -2,8 +2,8 @@
 
 /* for X68000, using libc or XClib */
 #ifdef human68k
-#define X68LIBC
-#undef X68XC
+#undef X68LIBC
+#define X68XC
 #endif /* human68k */
 
 /* Define to 1 if the `closedir' function returns void instead of int. */
