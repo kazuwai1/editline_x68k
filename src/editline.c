@@ -272,6 +272,10 @@ int rl_getc(void)
         r = read(el_infd, &c, 1);
     } while (r == -1 && errno == EINTR);
 #else /* X68000: get character(s) from keyboard */
+#if 1	/* NEW */
+	c = FGETC(0);
+	r = (c != 0x1a) ? 1 : -1;	/* ctrl-z is EOF in Huma68k */
+#else	/* OLD */
     char c0;	/* prefetched character */
     int g6, g7;	/* status of key-group */
 
@@ -299,6 +303,7 @@ int rl_getc(void)
     else if ( (g6 & 0x80) ) c = 0x04;	/* del key is ^D */
 
     r = (c != 0x1a) ? 1 : -1;	/* ctrl-z is EOF in Huma68k */
+#endif
 #endif
     
     return r == 1 ? c : EOF;
@@ -1530,7 +1535,7 @@ void rl_clear_message(void)
     /* Nothing to do atm. */
 }
 
-void rl_forced_update_display()
+void rl_forced_update_display(void)
 {
     redisplay(0);
     tty_flush();
@@ -2066,6 +2071,13 @@ static el_status_t last_argument(void)
     return s;
 }
 
+#ifdef MYDEBUG
+static el_status_t debug_save_history(void) {
+	write_history("dbg_his");
+	return 0;
+}
+#endif
+
 static el_keymap_t Map[64] = {
     {   CTL('@'),       mk_set          },
     {   CTL('A'),       beg_line        },
@@ -2117,6 +2129,9 @@ static el_keymap_t   MetaMap[64]= {
     {   'u',            case_up_word    },
     {   'y',            yank            },
     {   'w',            copy_region     },
+#ifdef MYDEBUG
+    {   'z',            debug_save_history },
+#endif
     {   0,              NULL            }
 };
 
